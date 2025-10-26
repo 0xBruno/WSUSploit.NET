@@ -72,9 +72,15 @@ namespace WSUSploit.NET
             XNamespace msNs = "http://www.microsoft.com/SoftwareDistribution";
 
             // Extract ServerId
-            string serverId = xmlDoc
+            string? serverId = xmlDoc
                 .Descendants(msNs + "ServerId")
                 .FirstOrDefault()?.Value;
+
+            if (serverId == null)
+            {
+                Console.WriteLine("[!] ERROR: Server ID is null! Exiting...");
+                Environment.Exit(1);
+            }
 
             Console.WriteLine($"[*] ServerId: {serverId}");
 
