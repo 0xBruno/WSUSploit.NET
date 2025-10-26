@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "WSUSploit.NET": {
+      "commandName": "Project",
+      "commandLineArgs": "http://192.168.116.134:8530"
+    }
+  }
+}
