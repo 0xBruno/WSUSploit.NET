@@ -2,7 +2,7 @@
 
 C# PoC for CVE-2025-59287
 
-Basically a port of the initial public PoC.
+Basically a port of the initial public PoC. Warning, will mess up WSUS.
 
 
 ## Disclaimer: 
