@@ -2,7 +2,7 @@
   "profiles": {
     "WSUSploit.NET": {
       "commandName": "Project",
-      "commandLineArgs": "http://192.168.116.138:8530\r\ncalc"
+      "commandLineArgs": "http://192.168.116.138:8530\r\nTaskmgr.exe"
     }
   }
 }

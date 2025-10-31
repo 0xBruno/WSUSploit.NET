@@ -1,18 +1,10 @@
-﻿using System;
-using System.Text;
+﻿using System.Text;
 using System.Net.Http;
 using System.Xml.Linq;
 using System.Security;
-using System.Windows.Data;
 using WSUSploit.NET;
-using System.Diagnostics;
 using System.IO;
-using System.Xml;
-using System.Windows.Markup;
 using System.Runtime.Serialization.Formatters.Binary;
-using System.Windows;
-using System.Collections.Specialized;
-using System.Reflection;
 using System.Runtime.Serialization;
 
 if (args.Length < 2)
